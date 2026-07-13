@@ -1,3 +1,5 @@
+pub mod auth;
+
 use axum::routing::get;
 use axum::{Router, serve};
 use dotenvy::dotenv;
