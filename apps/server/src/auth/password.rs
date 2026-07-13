@@ -62,7 +62,7 @@ mod tests {
         let hash = hash_password(plain_pwd).unwrap();
         // 校验返回true
         let result = verify_password(plain_pwd, &hash).unwrap();
-        assert_eq!(result, true);
+        assert!(result);
     }
 
     // 错误密码验证失败测试
@@ -73,7 +73,7 @@ mod tests {
         let hash = hash_password(real_pwd).unwrap();
 
         let ok = verify_password(wrong_pwd, &hash).unwrap();
-        assert_eq!(ok, false);
+        assert!(!ok);
     }
 
     // 同一明文两次哈希结果不同测试

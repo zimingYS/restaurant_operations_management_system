@@ -1223,6 +1223,7 @@ dependencies = [
  "axum",
  "dotenvy",
  "password-hash",
+ "serde",
  "sqlx",
  "thiserror",
  "tokio",
