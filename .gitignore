@@ -1,0 +1,5 @@
+/target
+/.idea/
+/.agents/
+/docs/PROJECT_MEMORY.md
+/Cargo.lock
