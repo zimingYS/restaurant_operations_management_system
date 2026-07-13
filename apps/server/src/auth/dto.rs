@@ -23,3 +23,17 @@ pub struct BootstrapOwnerResponse {
     /// 新创建用户的显示名称。
     pub display_name: String,
 }
+
+/// 登录请求
+#[derive(Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+/// 登录响应
+#[derive(Serialize)]
+pub struct LoginResponse {
+    pub id: i64,
+    pub username: String,
+}

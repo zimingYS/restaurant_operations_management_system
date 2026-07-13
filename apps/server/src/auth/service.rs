@@ -1,8 +1,14 @@
-use crate::auth::dto::{BootstrapOwnerRequest, BootstrapOwnerResponse};
-use crate::auth::password::{PasswordError, hash_password};
+use crate::auth::dto::{
+    BootstrapOwnerRequest, BootstrapOwnerResponse, LoginRequest, LoginResponse,
+};
+use crate::auth::password::{PasswordError, hash_password, verify_password};
 use crate::auth::repository;
+use crate::auth::session::SessionToken;
 use sqlx::PgPool;
 use thiserror::Error;
+
+/// 会话有效期
+const SESSION_TTL_SECONDS: i64 = 60 * 60 * 24 * 7;
 
 /// 初始化首个店主账号时可能发生的业务错误。
 #[derive(Debug, Error)]
@@ -66,5 +72,72 @@ pub async fn bootstrap_owner(
         id: user_id,
         username,
         display_name,
+    })
+}
+
+/// 登录成功
+pub struct LoginSuccess {
+    pub response: LoginResponse,
+    pub session_token: SessionToken,
+}
+
+/// 登录出错
+#[derive(Error, Debug)]
+pub enum LoginError {
+    #[error("无效凭证")]
+    InvalidCredentials,
+
+    #[error(transparent)]
+    PasswordVerification(#[from] PasswordError),
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+
+    #[error(transparent)]
+    PasswordTask(#[from] tokio::task::JoinError),
+}
+
+pub async fn login(pool: &PgPool, request: LoginRequest) -> Result<LoginSuccess, LoginError> {
+    // 获取用户名和密码
+    let LoginRequest { username, password } = request;
+
+    // 查询用户
+    let user = match repository::find_user_by_username(pool, &username).await? {
+        Some(user) => user,
+        None => return Err(LoginError::InvalidCredentials),
+    };
+
+    if !user.is_active {
+        return Err(LoginError::InvalidCredentials);
+    }
+
+    // 密码验证放到阻塞线程池
+    let password_hash = user.password_hash;
+
+    let verified =
+        tokio::task::spawn_blocking(move || verify_password(&password, &password_hash)).await??;
+
+    if !verified {
+        return Err(LoginError::InvalidCredentials);
+    }
+
+    // 开启事务
+    let mut tx = pool.begin().await?;
+
+    // 生成新的 Session Token
+    let session_token = SessionToken::generate();
+
+    // 创建 Session
+    repository::create_session(&mut tx, user.id, session_token.hash(), SESSION_TTL_SECONDS).await?;
+
+    // 提交事务
+    tx.commit().await?;
+
+    Ok(LoginSuccess {
+        response: LoginResponse {
+            id: user.id,
+            username: user.username,
+        },
+        session_token,
     })
 }

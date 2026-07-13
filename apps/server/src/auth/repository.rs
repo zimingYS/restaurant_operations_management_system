@@ -1,4 +1,13 @@
-use sqlx::{Postgres, Transaction};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
+
+/// 登录查询结果
+#[derive(FromRow)]
+pub struct LoginUser {
+    pub id: i64,
+    pub username: String,
+    pub password_hash: String,
+    pub is_active: bool,
+}
 
 /// 首店主初始化专用的 PostgreSQL advisory lock 键。
 const BOOTSTRAP_OWNER_LOCK_KEY: i64 = 2_026_071_301;
@@ -98,4 +107,52 @@ pub async fn assign_role(
     .await?;
 
     Ok(())
+}
+
+pub async fn find_user_by_username(
+    pool: &PgPool,
+    username: &str,
+) -> Result<Option<LoginUser>, sqlx::Error> {
+    sqlx::query_as::<_, LoginUser>(
+        r#"
+        SELECT
+            id,
+            username,
+            password_hash,
+            is_active
+        FROM users
+        WHERE LOWER(username) = LOWER($1)
+        "#,
+    )
+    .bind(username)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn create_session(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: i64,
+    token_hash: &str,
+    expires_in_seconds: i64,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"
+        INSERT INTO user_sessions (
+            user_id,
+            token_hash,
+            expires_at
+        )
+        VALUES (
+            $1,
+            $2,
+            NOW() + ($3 * INTERVAL '1 second')
+        )
+        RETURNING id
+        "#,
+    )
+    .bind(user_id)
+    .bind(token_hash)
+    .bind(expires_in_seconds)
+    .fetch_one(&mut **tx)
+    .await
 }
